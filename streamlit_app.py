@@ -66,7 +66,7 @@ def estado_inicial():
 
 @st.cache_resource
 def obtener_estado_sala():
-return estado_inicial()
+    return estado_inicial()
 
 
 sala = obtener_estado_sala()
