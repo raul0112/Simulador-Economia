@@ -1,0 +1,687 @@
+
+Python
+import streamlit as st
+import pandas as pd
+import random
+import time
+import threading
+import copy
+
+st.set_page_config(
+    page_title="Simulador Económico Multijugador",
+    layout="wide",
+)
+
+DURACION_RONDA = 180
+CLAVE_ADMIN = "profe123"
+
+
+@st.cache_resource
+def obtener_estado_sala():
+    return {
+        "fase": "espera",
+        "max_grupos": 10,
+        "presupuesto_inicial": 5000.0,
+        "ronda": 1,
+        "inicio_ronda": 0.0,
+        "precio_proveedor": 10.0,
+        "indice_mercado": 1.0,
+        "eventos_ronda": [
+            "🟢 El mercado abre estable al 100%.",
+            "🏭 El proveedor fija un precio inicial de 10.00 €/ud.",
+        ],
+        "suceso_global_ronda": None,
+        "grupos": {},
+        "envios_ronda": {},
+        "cerrando": False,
+    }
+
+
+sala = obtener_estado_sala()
+lock = threading.RLock()
+
+
+def construir_tabla_clasificacion():
+    filas = []
+
+    for nombre, datos in sala["grupos"].items():
+        ganancia_acumulada = round(
+            datos["caja"] - sala["presupuesto_inicial"],
+            2,
+        )
+
+        ganancia_ultima = (
+            datos["historial"][-1]["Beneficio (€)"]
+            if datos["historial"]
+            else 0.0
+        )
+
+        filas.append({
+            "Grupo / Empresa": nombre,
+            "Ganancias Totales (€)": ganancia_acumulada,
+            "Ganancia Última Ronda (€)": ganancia_ultima,
+            "Stock Restante (uds)": datos["stock"],
+            "Caja Actual (€)": round(datos["caja"], 2),
+        })
+
+    if not filas:
+        return pd.DataFrame(columns=[
+            "Posición",
+            "Grupo / Empresa",
+            "Ganancias Totales (€)",
+            "Ganancia Última Ronda (€)",
+            "Stock Restante (uds)",
+            "Caja Actual (€)",
+        ])
+
+    df = pd.DataFrame(filas)
+    df = df.sort_values(
+        by=["Ganancias Totales (€)", "Caja Actual (€)"],
+        ascending=[False, False],
+    ).reset_index(drop=True)
+
+    df.insert(
+        "Posición",
+        [f"{indice + 1}º" for indice in range(len(df))],
+    )
+    return df
+
+
+def cerrar_y_calcular_ronda():
+    evento_global = random.choices(
+        ["ninguno", "apagon", "black_friday", "huelga_transporte"],
+        weights=[75, 8, 10, 7],
+        k=1,
+    )[0]
+
+    if evento_global == "apagon":
+        sala["suceso_global_ronda"] = (
+            "⚡ **¡APAGÓN ELÉCTRICO GENERAL!** "
+            "Nadie ha podido vender unidades en esta ronda."
+        )
+    elif evento_global == "black_friday":
+        sala["suceso_global_ronda"] = (
+            "🛍️ **¡LOCURA DE BLACK FRIDAY!** "
+            "Todas las empresas reciben un +50% de demanda."
+        )
+    elif evento_global == "huelga_transporte":
+        sala["suceso_global_ronda"] = (
+            "🚧 **¡HUELGA DE TRANSPORTES!** "
+            "Las ventas de todas las empresas se reducen a la mitad."
+        )
+    else:
+        sala["suceso_global_ronda"] = None
+
+    for nombre, datos in sala["grupos"].items():
+        decision = sala["envios_ronda"].get(
+            nombre,
+            {
+                "comprar": 0,
+                "precio": 20,
+                "inversion": 0,
+            },
+        )
+
+        unidades_a_comprar = max(0, int(decision["comprar"]))
+        precio_venta = max(1.0, float(decision["precio"]))
+        inversion = max(0.0, float(decision["inversion"]))
+
+        caja_disponible = datos["caja"]
+
+        coste_compra = unidades_a_comprar * sala["precio_proveedor"]
+        gasto_total = coste_compra + inversion
+
+        if gasto_total > caja_disponible:
+            inversion = min(inversion, caja_disponible)
+
+            restante = caja_disponible - inversion
+            unidades_a_comprar = int(
+                restante // sala["precio_proveedor"]
+            )
+
+            coste_compra = (
+                unidades_a_comprar * sala["precio_proveedor"]
+            )
+            gasto_total = coste_compra + inversion
+
+        stock_disponible = datos["stock"] + unidades_a_comprar
+
+        evento_individual = random.choices(
+            ["ninguno", "tornado", "inundacion", "viral", "subvencion"],
+            weights=[78, 4, 6, 6, 6],
+            k=1,
+        )[0]
+
+        aviso_individual = ""
+        multiplicador_demanda_individual = 1.0
+        bonus_caja_individual = 0.0
+
+        if evento_individual == "tornado":
+            stock_disponible = 0
+            aviso_individual = (
+                "🌪️ **¡Un tornado ha arrasado el almacén!** "
+                "Se ha perdido todo el stock disponible."
+            )
+        elif evento_individual == "inundacion":
+            perdido = stock_disponible // 2
+            stock_disponible -= perdido
+            aviso_individual = (
+                "🌊 **¡Inundación en el almacén!** "
+                f"Se han estropeado **{perdido} uds**."
+            )
+        elif evento_individual == "viral":
+            multiplicador_demanda_individual = 1.8
+            aviso_individual = (
+                "📱 **¡El grupo se ha hecho viral!** "
+                "La demanda aumenta un **80%**."
+            )
+        elif evento_individual == "subvencion":
+            bonus_caja_individual = 400.0
+            aviso_individual = (
+                "🏅 **¡Premio a la mejor PYME!** "
+                "Se recibe una subvención de **400,00 €**."
+            )
+
+        datos["ultimo_suceso_indiv"] = aviso_individual
+
+        clientes_base = 80 * sala["indice_mercado"]
+        bonus_inversion = (inversion ** 0.5) * 2.2
+        total_clientes = int(
+            (clientes_base + bonus_inversion)
+            * random.uniform(0.92, 1.08)
+        )
+
+        probabilidad_compra = max(
+            0.05,
+            min(1.0, (45 - precio_venta) / 30),
+        )
+
+        demanda_real = int(
+            total_clientes
+            * probabilidad_compra
+            * multiplicador_demanda_individual
+        )
+
+        if evento_global == "apagon":
+            demanda_real = 0
+            vendidas = 0
+        elif evento_global == "black_friday":
+            demanda_real = int(demanda_real * 1.5)
+            vendidas = min(stock_disponible, demanda_real)
+        elif evento_global == "huelga_transporte":
+            demanda_real = int(demanda_real * 0.5)
+            vendidas = min(stock_disponible, demanda_real)
+        else:
+            vendidas = min(stock_disponible, demanda_real)
+
+        stock_final = stock_disponible - vendidas
+        ingresos = (
+            vendidas * precio_venta
+            + bonus_caja_individual
+        )
+        beneficio = ingresos - gasto_total
+
+        datos["caja"] = round(datos["caja"] + beneficio, 2)
+        datos["stock"] = stock_final
+
+        datos["historial"].append({
+            "Ronda": sala["ronda"],
+            "Prov. (€)": sala["precio_proveedor"],
+            "PVP (€)": precio_venta,
+            "Compradas": unidades_a_comprar,
+            "Demanda": demanda_real,
+            "Vendidas": vendidas,
+            "Stock": stock_final,
+            "Beneficio (€)": round(beneficio, 2),
+            "Caja (€)": datos["caja"],
+        })
+
+    sala["ronda"] += 1
+    sala["envios_ronda"] = {}
+    sala["cerrando"] = False
+
+    variacion_mercado = random.choice(
+        [-15, -10, -5, 0, 5, 10, 15, 20]
+    )
+    variacion_proveedor = random.choice(
+        [-15, -10, -5, 0, 5, 10, 15, 20]
+    )
+
+    sala["indice_mercado"] = round(
+        max(
+            0.4,
+            min(
+                2.2,
+                sala["indice_mercado"]
+                * (1 + variacion_mercado / 100),
+            ),
+        ),
+        2,
+    )
+
+    sala["precio_proveedor"] = round(
+        max(
+            3.0,
+            sala["precio_proveedor"]
+            * (1 + variacion_proveedor / 100),
+        ),
+        2,
+    )
+
+    eventos = []
+
+    if variacion_mercado > 0:
+        eventos.append(
+            f"📈 El mercado ha subido un +{variacion_mercado}% "
+            "(hay más clientes disponibles)."
+        )
+    elif variacion_mercado < 0:
+        eventos.append(
+            f"📉 El mercado ha bajado un {variacion_mercado}% "
+            "(hay menos clientes)."
+        )
+    else:
+        eventos.append(
+            "⚖️ El mercado se mantiene estable respecto "
+            "a la ronda anterior."
+        )
+
+    if variacion_proveedor > 0:
+        eventos.append(
+            f"🚚 El proveedor ha subido su precio un "
+            f"+{variacion_proveedor}% "
+            f"(ahora: **{sala['precio_proveedor']:.2f} €/ud**)."
+        )
+    elif variacion_proveedor < 0:
+        eventos.append(
+            f"🏷️ El proveedor ha bajado su precio un "
+            f"{variacion_proveedor}% "
+            f"(ahora: **{sala['precio_proveedor']:.2f} €/ud**)."
+        )
+    else:
+        eventos.append(
+            "🏭 El proveedor mantiene su precio en "
+            f"**{sala['precio_proveedor']:.2f} €/ud**."
+        )
+
+    sala["eventos_ronda"] = eventos
+    sala["inicio_ronda"] = time.time()
+
+
+st.title("🏢 Simulador Económico de Clase")
+
+tab_alumno, tab_admin = st.tabs([
+    "🎓 Zona de Grupos",
+    "🎛️ Control del Organizador",
+])
+
+
+with tab_alumno:
+    if "mi_grupo" not in st.session_state:
+        st.session_state.mi_grupo = None
+
+    if (
+        st.session_state.mi_grupo is not None
+        and st.session_state.mi_grupo not in sala["grupos"]
+    ):
+        st.session_state.mi_grupo = None
+
+    if st.session_state.mi_grupo is None:
+        st.subheader("Únete a la simulación")
+        st.write(
+            f"Grupos inscritos: "
+            f"**{len(sala['grupos'])} / {sala['max_grupos']}**"
+        )
+
+        if sala["fase"] != "espera":
+            st.warning(
+                "⚠️ La partida ya ha comenzado o ha terminado."
+            )
+        elif len(sala["grupos"]) >= sala["max_grupos"]:
+            st.error(
+                "🚫 Se ha alcanzado el límite máximo de grupos."
+            )
+        else:
+            nombre = st.text_input(
+                "Nombre de tu grupo o empresa:",
+                key="nombre_grupo",
+            )
+
+            if st.button(
+                "✅ Entrar a la sala",
+                type="primary",
+            ):
+                nombre_limpio = nombre.strip()
+
+                if not nombre_limpio:
+                    st.error("Escribe un nombre válido.")
+                elif nombre_limpio in sala["grupos"]:
+                    st.error("Ese nombre ya está ocupado.")
+                else:
+                    with lock:
+                        sala["grupos"][nombre_limpio] = {
+                            "caja": float(
+                                sala["presupuesto_inicial"]
+                            ),
+                            "stock": 0,
+                            "ultimo_suceso_indiv": "",
+                            "historial": [],
+                        }
+
+                    st.session_state.mi_grupo = nombre_limpio
+                    st.rerun()
+
+    else:
+        nombre_grupo = st.session_state.mi_grupo
+        datos_grupo = sala["grupos"][nombre_grupo]
+
+        st.caption(
+            f"Conectado como: **{nombre_grupo}**"
+        )
+
+        if st.button("Salir del grupo"):
+            st.session_state.mi_grupo = None
+            st.rerun()
+
+        if sala["fase"] == "espera":
+            @st.fragment(run_every="2s")
+            def vista_espera():
+                if sala["fase"] != "espera":
+                    st.rerun()
+
+                st.info(
+                    "⏳ Esperando a que el organizador "
+                    "inicie la primera ronda..."
+                )
+
+                nombres = ", ".join(sala["grupos"].keys())
+                st.write(
+                    f"Grupos conectados "
+                    f"({len(sala['grupos'])}/"
+                    f"{sala['max_grupos']}): "
+                    f"{nombres or 'Ninguno'}"
+                )
+
+            vista_espera()
+
+        elif sala["fase"] == "jugando":
+            @st.fragment(run_every="1s")
+            def vista_ronda():
+                st.subheader(f"Ronda {sala['ronda']}")
+
+                tiempo_restante = max(
+                    0,
+                    int(
+                        DURACION_RONDA
+                        - (
+                            time.time()
+                            - sala["inicio_ronda"]
+                        )
+                    ),
+                )
+
+                st.progress(
+                    tiempo_restante / DURACION_RONDA
+                )
+                st.metric(
+                    "Tiempo restante",
+                    f"{tiempo_restante // 60:02d}:"
+                    f"{tiempo_restante % 60:02d}",
+                )
+
+                if sala["ronda"] > 1:
+                    if sala["suceso_global_ronda"]:
+                        st.error(
+                            sala["suceso_global_ronda"]
+                        )
+
+                    if datos_grupo.get(
+                        "ultimo_suceso_indiv"
+                    ):
+                        st.warning(
+                            datos_grupo[
+                                "ultimo_suceso_indiv"
+                            ]
+                        )
+
+                with st.container(border=True):
+                    st.markdown(
+                        "**📢 Situación del mercado:**"
+                    )
+                    for evento in sala["eventos_ronda"]:
+                        st.markdown(f"- {evento}")
+
+                col1, col2, col3, col4 = st.columns(4)
+
+                col1.metric(
+                    "Caja",
+                    f"{datos_grupo['caja']:.2f} €",
+                )
+                col2.metric(
+                    "Stock",
+                    f"{datos_grupo['stock']} uds",
+                )
+                col3.metric(
+                    "Precio proveedor",
+                    f"{sala['precio_proveedor']:.2f} €/ud",
+                )
+                col4.metric(
+                    "Índice de mercado",
+                    f"{int(sala['indice_mercado'] * 100)}%",
+                )
+
+                nombre_decision = (
+                    f"decision_{nombre_grupo}"
+                )
+
+                if nombre_grupo not in sala["envios_ronda"]:
+                    if nombre_decision not in st.session_state:
+                        st.session_state[nombre_decision] = {
+                            "comprar": 0,
+                            "precio": 20.0,
+                            "inversion": 0,
+                        }
+
+                    decision = st.session_state[nombre_decision]
+
+                    with st.form(
+                        f"form_{nombre_grupo}"
+                    ):
+                        comprar = st.number_input(
+                            "Unidades a comprar",
+                            min_value=0,
+                            max_value=500,
+                            value=decision["comprar"],
+                            step=1,
+                        )
+
+                        precio = st.number_input(
+                            "Precio de venta",
+                            min_value=1.0,
+                            max_value=50.0,
+                            value=decision["precio"],
+                            step=0.5,
+                        )
+
+                        inversion = st.number_input(
+                            "Inversión en marketing",
+                            min_value=0,
+                            max_value=int(
+                                datos_grupo["caja"]
+                            ),
+                            value=decision["inversion"],
+                            step=50,
+                        )
+
+                        enviado = st.form_submit_button(
+                            "Enviar decisión",
+                            type="primary",
+                        )
+
+                        if enviado:
+                            coste = (
+                                comprar
+                                * sala["precio_proveedor"]
+                            )
+
+                            if coste + inversion > datos_grupo["caja"]:
+                                st.error(
+                                    "No tienes suficiente caja "
+                                    "para esa compra e inversión."
+                                )
+                            else:
+                                sala["envios_ronda"][nombre_grupo] = {
+                                    "comprar": comprar,
+                                    "precio": precio,
+                                    "inversion": inversion,
+                                }
+
+                                st.success(
+                                    "Decisión enviada."
+                                )
+                                st.rerun()
+                else:
+                    st.success(
+                        "✅ Decisión enviada para esta ronda."
+                    )
+
+                if datos_grupo["historial"]:
+                    st.subheader("Historial")
+                    st.dataframe(
+                        pd.DataFrame(
+                            datos_grupo["historial"]
+                        ).sort_index(
+                            ascending=False
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                st.subheader("Clasificación")
+                st.dataframe(
+                    construir_tabla_clasificacion(),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+                if (
+                    tiempo_restante == 0
+                    and not sala["cerrando"]
+                    and sala["fase"] == "jugando"
+                ):
+                    sala["cerrando"] = True
+                    cerrar_y_calcular_ronda()
+
+            vista_ronda()
+
+        else:
+            st.success(
+                "🏁 La partida ha terminado."
+            )
+            st.subheader("Clasificación final")
+            st.dataframe(
+                construir_tabla_clasificacion(),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+
+with tab_admin:
+    st.subheader("Control del organizador")
+
+    clave = st.text_input(
+        "Contraseña",
+        type="password",
+    )
+
+    if clave == CLAVE_ADMIN:
+        st.success("Acceso autorizado")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            if st.button(
+                "Iniciar Ronda",
+                type="primary",
+                disabled=sala["fase"] != "espera",
+            ):
+                if sala["grupos"]:
+                    sala["fase"] = "jugando"
+                    sala["ronda"] = 1
+                    sala["inicio_ronda"] = time.time()
+                    sala["envios_ronda"] = {}
+                    sala["suceso_global_ronda"] = None
+                    st.rerun()
+                else:
+                    st.warning(
+                        "No hay grupos inscritos."
+                    )
+
+        with col2:
+            if st.button(
+                "Cerrar ronda",
+                disabled=sala["fase"] != "jugando",
+            ):
+                cerrar_y_calcular_ronda()
+                st.rerun()
+
+        with col3:
+            if st.button(
+                "Nueva sala",
+                disabled=sala["fase"] == "espera",
+            ):
+                sala["fase"] = "espera"
+                sala["ronda"] = 1
+                sala["inicio_ronda"] = 0.0
+                sala["precio_proveedor"] = 10.0
+                sala["indice_mercado"] = 1.0
+                sala["suceso_global_ronda"] = None
+                sala["envios_ronda"] = {}
+                sala["cerrando"] = False
+                sala["grupos"] = {}
+                sala["eventos_ronda"] = [
+                    "🟢 El mercado abre estable al 100%.",
+                    "🏭 El proveedor fija un precio "
+                    "inicial de 10.00 €/ud.",
+                ]
+
+                for clave_sesion in list(
+                    st.session_state.keys()
+                ):
+                    if clave_sesion.startswith(
+                        "nombre_grupo"
+                    ) or clave_sesion.startswith(
+                        "decision_"
+                    ):
+                        del st.session_state[
+                            clave_sesion
+                        ]
+
+                st.session_state.mi_grupo = None
+                st.rerun()
+
+        st.divider()
+
+        st.metric(
+            "Ronda actual",
+            sala["ronda"],
+        )
+        st.metric(
+            "Grupos conectados",
+            len(sala["grupos"]),
+        )
+
+        st.subheader("Clasificación")
+        st.dataframe(
+            construir_tabla_clasificacion(),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.subheader("Grupos inscritos")
+        st.write(
+            ", ".join(sala["grupos"].keys())
+            or "Todavía no hay grupos."
+        )
+    elif clave:
+        st.error("Contraseña incorrecta")
