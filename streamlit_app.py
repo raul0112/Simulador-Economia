@@ -97,7 +97,7 @@ for h in datos["historial"]
 
 
 def posicion_empresa(nombre):
-ranking = sorted(
+    ranking = sorted(
 sala["grupos"].items(),
 key=lambda x: (
 beneficio_acumulado(x[1]),
