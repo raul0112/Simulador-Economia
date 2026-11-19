@@ -45,7 +45,7 @@ font-weight: bold;
 # =====================================================
 
 def estado_inicial():
-return {
+    return {
 "fase": "espera",
 "max_grupos": 10,
 "presupuesto_inicial": 5000.0,
