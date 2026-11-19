@@ -107,7 +107,7 @@ reverse=True
 )
 
 for i, (empresa, _) in enumerate(ranking):
-if empresa == nombre:
+    if empresa == nombre:
 return i + 1
 
 return None
