@@ -77,7 +77,7 @@ sala = obtener_estado_sala()
 # =====================================================
 
 def beneficio_acumulado(datos):
-return round(
+    return round(
 datos["caja"] - sala["presupuesto_inicial"], 2
 )
 
