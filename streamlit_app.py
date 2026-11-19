@@ -90,7 +90,7 @@ for h in datos["historial"]
 
 
 def perdidas_acumuladas(datos):
-return round(sum(
+    return round(sum(
 abs(min(0, h["Beneficio (€)"]))
 for h in datos["historial"]
 ), 2)
