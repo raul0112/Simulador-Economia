@@ -83,7 +83,7 @@ datos["caja"] - sala["presupuesto_inicial"], 2
 
 
 def ganancias_acumuladas(datos):
-return round(sum(
+    return round(sum(
 max(0, h["Beneficio (€)"])
 for h in datos["historial"]
 ), 2)
