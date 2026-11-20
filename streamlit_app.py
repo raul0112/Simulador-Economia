@@ -3,6 +3,7 @@ import pandas as pd
 import random
 import time
 import math
+from streamlit_autorefresh import st_autorefresh
 
 # =====================================================
 # CONFIGURACIÓN
@@ -16,6 +17,8 @@ st.set_page_config(
 
 CLAVE_ADMIN = "profe123"
 
+# Actualiza la pantalla de cada jugador para recibir cambios de la sala.
+st_autorefresh(interval=3000, key="actualizar_partida")
 
 # =====================================================
 # DISEÑO
@@ -242,10 +245,8 @@ def cerrar_ronda():
 
         if evento_global == "apagon":
             demanda = 0
-
         elif evento_global == "black_friday":
             demanda = int(demanda * 1.5)
-
         elif evento_global == "huelga":
             demanda = int(demanda * 0.5)
 
@@ -333,7 +334,6 @@ def cerrar_ronda():
         )
 
     sala["eventos_ronda"] = eventos
-
     sala["ultimo_cierre"] = {
         "ronda": sala["ronda"],
         "resultados": resultados,
@@ -370,10 +370,6 @@ with tab_alumno:
     if "autenticado" not in st.session_state:
         st.session_state.autenticado = False
 
-    # -----------------------------------------------
-    # ACCESO
-    # -----------------------------------------------
-
     empresa = st.session_state.empresa_activa
 
     if (
@@ -396,17 +392,13 @@ with tab_alumno:
 
             if not nombre or not pin:
                 st.error("Introduce un nombre y un PIN.")
-
             elif opcion == "Crear empresa":
                 if sala["fase"] != "espera":
                     st.error("La partida ya ha comenzado.")
-
                 elif len(sala["grupos"]) >= sala["max_grupos"]:
                     st.error("Se ha alcanzado el límite de empresas.")
-
                 elif nombre in sala["grupos"]:
                     st.error("Ese nombre ya está ocupado.")
-
                 else:
                     sala["grupos"][nombre] = {
                         "pin": pin,
@@ -415,37 +407,27 @@ with tab_alumno:
                         "historial": [],
                         "ultimo_suceso_indiv": ""
                     }
-
                     st.session_state.empresa_activa = nombre
                     st.session_state.autenticado = True
                     st.success("¡Empresa creada correctamente!")
                     st.rerun()
-
             else:
                 if nombre not in sala["grupos"]:
                     st.error("No existe esa empresa.")
-
                 elif sala["grupos"][nombre]["pin"] != pin:
                     st.error("PIN incorrecto.")
-
                 else:
                     st.session_state.empresa_activa = nombre
                     st.session_state.autenticado = True
                     st.rerun()
 
-    # -----------------------------------------------
-    # PANEL PRIVADO
-    # -----------------------------------------------
-
     else:
         datos = sala["grupos"][empresa]
 
         cabecera1, cabecera2 = st.columns([3, 1])
-
         with cabecera1:
             st.subheader(f"🏢 {empresa}")
             st.caption("Panel financiero privado")
-
         with cabecera2:
             if st.button("Cerrar sesión"):
                 st.session_state.empresa_activa = None
@@ -459,24 +441,16 @@ with tab_alumno:
             st.markdown("---")
             st.subheader(f"📊 Ronda {sala['ronda']}")
 
-            # MÉTRICAS PRIVADAS
-
             beneficio = beneficio_acumulado(datos)
-            ultima = (
-                datos["historial"][-1]
-                if datos["historial"]
-                else {}
-            )
+            ultima = datos["historial"][-1] if datos["historial"] else {}
 
             m1, m2, m3, m4 = st.columns(4)
-
             m1.metric("💰 Caja disponible", f"{datos['caja']:,.2f} €")
             m2.metric("📦 Stock en almacén", f"{datos['stock']} uds.")
             m3.metric("📈 Beneficio acumulado", f"{beneficio:+,.2f} €")
             m4.metric("🏆 Posición", f"{posicion_empresa(empresa)}º")
 
             m5, m6, m7 = st.columns(3)
-
             m5.metric(
                 "🟢 Ganancias acumuladas",
                 f"{ganancias_acumuladas(datos):,.2f} €"
@@ -491,35 +465,19 @@ with tab_alumno:
             )
 
             st.markdown("---")
-
-            # INFORMACIÓN DEL MERCADO
-
             st.subheader("🌍 Situación del mercado")
-
             a, b = st.columns(2)
-
-            a.metric(
-                "Precio del proveedor",
-                f"{sala['precio_proveedor']:.2f} €/ud."
-            )
-            b.metric(
-                "Índice del mercado",
-                f"{sala['indice_mercado'] * 100:.0f}%"
-            )
+            a.metric("Precio del proveedor", f"{sala['precio_proveedor']:.2f} €/ud.")
+            b.metric("Índice del mercado", f"{sala['indice_mercado'] * 100:.0f}%")
 
             for evento in sala["eventos_ronda"]:
                 st.info(evento)
-
             if sala["ultimo_evento_global"]:
                 st.warning(sala["ultimo_evento_global"])
-
             if datos["ultimo_suceso_indiv"]:
                 st.warning(datos["ultimo_suceso_indiv"])
 
             st.markdown("---")
-
-            # DECISIONES EMPRESARIALES
-
             st.subheader("🛒 Decisiones de esta ronda")
 
             with st.form("decisiones_empresa"):
@@ -530,7 +488,6 @@ with tab_alumno:
                     value=0,
                     step=10
                 )
-
                 precio = st.number_input(
                     "Precio de venta por unidad (€)",
                     min_value=1.0,
@@ -538,7 +495,6 @@ with tab_alumno:
                     value=20.0,
                     step=0.5
                 )
-
                 inversion = st.number_input(
                     "Inversión en publicidad (€)",
                     min_value=0.0,
@@ -546,7 +502,6 @@ with tab_alumno:
                     value=0.0,
                     step=100.0
                 )
-
                 enviar = st.form_submit_button(
                     "📨 Enviar decisiones",
                     type="primary",
@@ -555,7 +510,6 @@ with tab_alumno:
 
                 if enviar:
                     coste = comprar * sala["precio_proveedor"]
-
                     if coste + inversion > datos["caja"]:
                         st.error(
                             "No tienes suficiente dinero para "
@@ -574,15 +528,10 @@ with tab_alumno:
                     "✅ Tus decisiones están registradas. "
                     "Puedes modificarlas antes del cierre."
                 )
-
             st.caption(
                 f"Empresas que han enviado sus decisiones: "
                 f"{len(sala['envios_ronda'])}/{len(sala['grupos'])}"
             )
-
-        # -------------------------------------------
-        # PARTIDA FINALIZADA
-        # -------------------------------------------
 
         elif sala["fase"] == "terminada":
             st.success("🏁 ¡La simulación ha terminado!")
@@ -591,55 +540,31 @@ with tab_alumno:
                 f"{beneficio_acumulado(datos):+,.2f} €"
             )
 
-        # -------------------------------------------
-        # HISTORIAL PRIVADO
-        # -------------------------------------------
-
         st.markdown("---")
         st.subheader("📚 Mi historial empresarial")
-
         if datos["historial"]:
             df_historial = pd.DataFrame(datos["historial"])
-
-            st.dataframe(
-                df_historial,
-                use_container_width=True,
-                hide_index=True
-            )
-
+            st.dataframe(df_historial, use_container_width=True, hide_index=True)
             grafico = df_historial[
                 ["Ronda", "Caja (€)", "Beneficio (€)"]
             ].set_index("Ronda")
-
             st.subheader("📈 Evolución de mi empresa")
             st.line_chart(grafico)
-
         else:
             st.info(
                 "Todavía no tienes resultados. "
                 "Cuando termine la primera ronda aparecerán aquí."
             )
 
-        # -------------------------------------------
-        # CLASIFICACIÓN PÚBLICA
-        # -------------------------------------------
-
         st.markdown("---")
         st.subheader("🏆 Clasificación general")
-
         st.caption(
             "Todos pueden consultar estos resultados. "
             "No se muestran las cajas ni los gastos de otras empresas."
         )
-
         df_ranking = tabla_clasificacion()
-
         if not df_ranking.empty:
-            st.dataframe(
-                df_ranking,
-                use_container_width=True,
-                hide_index=True
-            )
+            st.dataframe(df_ranking, use_container_width=True, hide_index=True)
 
 
 # =====================================================
@@ -652,9 +577,7 @@ with tab_admin:
 
     if not st.session_state.admin_autenticado:
         st.subheader("🔐 Acceso del profesor")
-
         clave = st.text_input("Contraseña del profesor", type="password")
-
         if st.button("Acceder al panel", type="primary"):
             if clave == CLAVE_ADMIN:
                 st.session_state.admin_autenticado = True
@@ -664,19 +587,14 @@ with tab_admin:
 
     else:
         st.subheader("🎛️ Panel de administración")
-
         if st.button("Cerrar sesión del profesor"):
             st.session_state.admin_autenticado = False
             st.rerun()
 
-        # CONFIGURACIÓN
-
         st.markdown("---")
         st.subheader("⚙️ Configuración de la partida")
-
         if sala["fase"] == "espera":
             c1, c2 = st.columns(2)
-
             with c1:
                 nuevo_max = st.number_input(
                     "Máximo de empresas",
@@ -684,7 +602,6 @@ with tab_admin:
                     max_value=30,
                     value=sala["max_grupos"]
                 )
-
             with c2:
                 nuevo_presupuesto = st.number_input(
                     "Presupuesto inicial (€)",
@@ -693,18 +610,14 @@ with tab_admin:
                     value=float(sala["presupuesto_inicial"]),
                     step=500.0
                 )
-
             if st.button("Guardar configuración"):
                 sala["max_grupos"] = nuevo_max
                 sala["presupuesto_inicial"] = nuevo_presupuesto
                 st.success("Configuración guardada.")
                 st.rerun()
 
-        # CONTROL DE PARTIDA
-
         st.markdown("---")
         st.subheader("🎮 Control de la simulación")
-
         st.write(f"**Estado:** {sala['fase']}")
         st.write(f"**Empresas inscritas:** {len(sala['grupos'])}")
         st.write(f"**Ronda actual:** {sala['ronda']}")
@@ -728,7 +641,6 @@ with tab_admin:
                 f"Decisiones recibidas: "
                 f"{len(sala['envios_ronda'])}/{len(sala['grupos'])}"
             )
-
             if st.button(
                 "⏹️ CERRAR RONDA Y CALCULAR RESULTADOS",
                 type="primary",
@@ -737,41 +649,27 @@ with tab_admin:
                 cerrar_ronda()
                 st.success("¡Ronda calculada correctamente!")
                 st.rerun()
-
             if st.button("🏁 FINALIZAR PARTIDA"):
                 sala["fase"] = "terminada"
                 st.rerun()
 
-        # CLASIFICACIÓN
-
         st.markdown("---")
         st.subheader("🏆 Clasificación de empresas")
-
         df = tabla_clasificacion()
-
         if not df.empty:
-            st.dataframe(
-                df,
-                use_container_width=True,
-                hide_index=True
-            )
-
-        # INFORMACIÓN PRIVADA DEL PROFESOR
+            st.dataframe(df, use_container_width=True, hide_index=True)
 
         st.markdown("---")
         st.subheader("🔎 Datos completos de las empresas")
-
         for nombre, datos in sala["grupos"].items():
             with st.expander(f"🏢 {nombre}"):
                 c1, c2, c3 = st.columns(3)
-
                 c1.metric("Caja", f"{datos['caja']:,.2f} €")
                 c2.metric("Stock", f"{datos['stock']} uds.")
                 c3.metric(
                     "Beneficio acumulado",
                     f"{beneficio_acumulado(datos):+,.2f} €"
                 )
-
                 st.write(
                     f"Ganancias acumuladas: "
                     f"{ganancias_acumuladas(datos):,.2f} €"
@@ -780,7 +678,6 @@ with tab_admin:
                     f"Pérdidas acumuladas: "
                     f"{perdidas_acumuladas(datos):,.2f} €"
                 )
-
                 if datos["historial"]:
                     st.dataframe(
                         pd.DataFrame(datos["historial"]),
@@ -788,27 +685,20 @@ with tab_admin:
                         hide_index=True
                     )
 
-        # REINICIAR
-
         st.markdown("---")
         st.subheader("🔄 Reiniciar simulación")
-
         st.warning(
             "Esta acción elimina las empresas, decisiones "
             "e historiales de la partida actual."
         )
-
         confirmar = st.checkbox(
             "Confirmo que quiero borrar toda la partida."
         )
-
         if st.button("🗑️ REINICIAR TODO", disabled=not confirmar):
             sala.clear()
             sala.update(estado_inicial())
-
             st.session_state.empresa_activa = None
             st.session_state.autenticado = False
-
             st.success("Simulación reiniciada.")
             st.rerun()
 
