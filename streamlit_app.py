@@ -625,20 +625,13 @@ with tab_admin:
         st.markdown("---")
         st.subheader("⚙️ Configuración de la partida")
         if sala["fase"] == "espera":
-            c1, c2 = st.columns(2)
+            c1, c2, c3 = st.columns(3)
             with c1:
                 nuevo_max = st.number_input(
                     "Máximo de empresas",
                     min_value=2,
                     max_value=30,
                     value=sala["max_grupos"]
-                )
-                nueva_dificultad = st.selectbox(
-                    "Nivel de dificultad",
-                    ["Fácil", "Medio", "Difícil"],
-                    index=["Fácil", "Medio", "Difícil"].index(
-                        sala.get("dificultad", "Medio")
-                    )
                 )
             with c2:
                 nuevo_presupuesto = st.number_input(
@@ -648,12 +641,21 @@ with tab_admin:
                     value=float(sala["presupuesto_inicial"]),
                     step=500.0
                 )
-                descripciones = {
-                    "Fácil": "Menos desastres, clientes más estables y menor precio del proveedor.",
-                    "Medio": "Volatilidad y eventos equilibrados.",
-                    "Difícil": "Más desastres, grandes cambios de clientes y proveedor más caro y variable."
-                }
-                st.caption(descripciones[nueva_dificultad])
+            with c3:
+                nueva_dificultad = st.selectbox(
+                    "Nivel de dificultad",
+                    ["Fácil", "Medio", "Difícil"],
+                    index=["Fácil", "Medio", "Difícil"].index(
+                        sala.get("dificultad", "Medio")
+                    )
+                )
+
+            descripciones = {
+                "Fácil": "Menos desastres, clientes más estables y menor precio del proveedor.",
+                "Medio": "Volatilidad y eventos equilibrados.",
+                "Difícil": "Más desastres, grandes cambios de clientes y proveedor más caro y variable."
+            }
+            st.caption(descripciones[nueva_dificultad])
 
             if st.button("Guardar configuración"):
                 sala["max_grupos"] = nuevo_max
