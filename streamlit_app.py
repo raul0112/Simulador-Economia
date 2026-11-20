@@ -52,6 +52,7 @@ def estado_inicial():
         "fase": "espera",
         "max_grupos": 10,
         "presupuesto_inicial": 5000.0,
+        "dificultad": "Medio",
         "ronda": 1,
         "inicio_ronda": 0,
         "precio_proveedor": 10.0,
@@ -73,6 +74,38 @@ def obtener_estado_sala():
 
 
 sala = obtener_estado_sala()
+
+
+def parametros_dificultad():
+    """Devuelve la volatilidad y los eventos correspondientes al nivel elegido."""
+    parametros = {
+        "Fácil": {
+            "precio_inicial": 8.0,
+            "variaciones_mercado": [-5, -2, 0, 2, 5],
+            "variaciones_proveedor": [-5, -2, 0, 2, 5],
+            "pesos_globales": [90, 4, 3, 3],
+            "pesos_individuales": [88, 2, 4, 3, 3],
+            "variacion_clientes": (0.97, 1.03)
+        },
+        "Medio": {
+            "precio_inicial": 10.0,
+            "variaciones_mercado": [-15, -10, -5, 0, 5, 10, 15, 20],
+            "variaciones_proveedor": [-15, -10, -5, 0, 5, 10, 15, 20],
+            "pesos_globales": [75, 8, 10, 7],
+            "pesos_individuales": [78, 4, 6, 6, 6],
+            "variacion_clientes": (0.92, 1.08)
+        },
+        "Difícil": {
+            "precio_inicial": 15.0,
+            "variaciones_mercado": [-25, -15, -10, 0, 10, 20, 30],
+            # Las subidas son más frecuentes e intensas que las bajadas.
+            "variaciones_proveedor": [-15, -10, 0, 10, 20, 30, 40],
+            "pesos_globales": [55, 15, 15, 15],
+            "pesos_individuales": [60, 10, 10, 10, 10],
+            "variacion_clientes": (0.75, 1.25)
+        }
+    }
+    return parametros.get(sala.get("dificultad", "Medio"), parametros["Medio"])
 
 
 # =====================================================
@@ -154,9 +187,10 @@ def tabla_clasificacion():
 # =====================================================
 
 def cerrar_ronda():
+    config = parametros_dificultad()
     evento_global = random.choices(
         ["ninguno", "apagon", "black_friday", "huelga"],
-        weights=[75, 8, 10, 7],
+        weights=config["pesos_globales"],
         k=1
     )[0]
 
@@ -196,10 +230,9 @@ def cerrar_ronda():
         stock_disponible = datos["stock"] + comprar
 
         # EVENTO INDIVIDUAL
-
         evento = random.choices(
             ["ninguno", "tornado", "inundacion", "viral", "subvencion"],
-            weights=[78, 4, 6, 6, 6],
+            weights=config["pesos_individuales"],
             k=1
         )[0]
 
@@ -226,14 +259,12 @@ def cerrar_ronda():
 
         datos["ultimo_suceso_indiv"] = aviso
 
-        # DEMANDA
-
+        # DEMANDA: la dificultad alta amplía los cambios en el número de clientes.
         clientes_base = 80 * sala["indice_mercado"]
         bonus_inversion = math.sqrt(inversion) * 2.2
-
         clientes = int(
             (clientes_base + bonus_inversion)
-            * random.uniform(0.92, 1.08)
+            * random.uniform(*config["variacion_clientes"])
         )
 
         probabilidad = max(
@@ -284,10 +315,9 @@ def cerrar_ronda():
             "Vendidas": vendidas
         })
 
-    # ACTUALIZAR MERCADO
-
-    var_mercado = random.choice([-15, -10, -5, 0, 5, 10, 15, 20])
-    var_proveedor = random.choice([-15, -10, -5, 0, 5, 10, 15, 20])
+    # ACTUALIZAR MERCADO Y PROVEEDOR SEGÚN LA DIFICULTAD
+    var_mercado = random.choice(config["variaciones_mercado"])
+    var_proveedor = random.choice(config["variaciones_proveedor"])
 
     sala["indice_mercado"] = round(
         max(
@@ -470,6 +500,7 @@ with tab_alumno:
             a.metric("Precio del proveedor", f"{sala['precio_proveedor']:.2f} €/ud.")
             b.metric("Índice del mercado", f"{sala['indice_mercado'] * 100:.0f}%")
 
+            st.caption(f"Nivel de dificultad: {sala.get('dificultad', 'Medio')}")
             for evento in sala["eventos_ronda"]:
                 st.info(evento)
             if sala["ultimo_evento_global"]:
@@ -602,6 +633,13 @@ with tab_admin:
                     max_value=30,
                     value=sala["max_grupos"]
                 )
+                nueva_dificultad = st.selectbox(
+                    "Nivel de dificultad",
+                    ["Fácil", "Medio", "Difícil"],
+                    index=["Fácil", "Medio", "Difícil"].index(
+                        sala.get("dificultad", "Medio")
+                    )
+                )
             with c2:
                 nuevo_presupuesto = st.number_input(
                     "Presupuesto inicial (€)",
@@ -610,11 +648,27 @@ with tab_admin:
                     value=float(sala["presupuesto_inicial"]),
                     step=500.0
                 )
+                descripciones = {
+                    "Fácil": "Menos desastres, clientes más estables y menor precio del proveedor.",
+                    "Medio": "Volatilidad y eventos equilibrados.",
+                    "Difícil": "Más desastres, grandes cambios de clientes y proveedor más caro y variable."
+                }
+                st.caption(descripciones[nueva_dificultad])
+
             if st.button("Guardar configuración"):
                 sala["max_grupos"] = nuevo_max
                 sala["presupuesto_inicial"] = nuevo_presupuesto
+                sala["dificultad"] = nueva_dificultad
+                sala["precio_proveedor"] = parametros_dificultad()["precio_inicial"]
+                sala["eventos_ronda"] = [
+                    "🟢 El mercado abre estable al 100%.",
+                    f"🏭 El proveedor fija un precio inicial de "
+                    f"{sala['precio_proveedor']:.2f} €/ud."
+                ]
                 st.success("Configuración guardada.")
                 st.rerun()
+        else:
+            st.write(f"**Dificultad de la partida:** {sala.get('dificultad', 'Medio')}")
 
         st.markdown("---")
         st.subheader("🎮 Control de la simulación")
