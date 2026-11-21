@@ -15,7 +15,7 @@ st.set_page_config(
     layout="wide"
 )
 
-CLAVE_ADMIN = "contraseña"
+CLAVE_ADMIN = "profe123"
 
 # Actualiza la pantalla de cada jugador para recibir cambios de la sala.
 st_autorefresh(interval=3000, key="actualizar_partida")
